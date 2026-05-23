@@ -225,12 +225,12 @@ class MyApp extends StatelessWidget {
 
 ## How Auto-Sync Works — Flow Diagram
 
-┌─────────────────────────────────────────────────────────────┐<br>
-│                     USER ACTION                             │<br>
-│  (create, update, delete contact/product/order/etc.)        │<br>
-└─────────────┬───────────────────────────────────────────────┘<br>
-              │<br>
-              ▼<br>
+┌─────────────────────────────────────────────────────────────┐ <br>
+│                     USER ACTION                             │ <br>
+│  (create, update, delete contact/product/order/etc.)        │ <br>
+└─────────────┬───────────────────────────────────────────────┘ <br>
+              │ <br>
+              ▼ <br>
 ┌─────────────────────────────────────────────────────────────┐<br>
 │              SERVICE (Offline-First)                        │<br>
 │                                                             │<br>
