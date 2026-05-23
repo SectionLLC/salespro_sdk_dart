@@ -195,7 +195,8 @@ class SyncManager {
           await _httpClient.delete(item.path);
           break;
         default:
-          throw SalesProException(message: 'Unknown operation: ${item.operation}');
+          throw SalesProException(
+              message: 'Unknown operation: ${item.operation}');
       }
 
       // Success — remove from queue and mark entity clean
@@ -220,7 +221,14 @@ class SyncManager {
 
   /// Push dirty entities that aren't yet in the queue.
   Future<void> _pushDirtyEntities() async {
-    final entityTypes = ['contact', 'product', 'order', 'invoice', 'quote', 'inventory_item'];
+    final entityTypes = [
+      'contact',
+      'product',
+      'order',
+      'invoice',
+      'quote',
+      'inventory_item'
+    ];
 
     for (final type in entityTypes) {
       final table = _entityTypeToTable(type);
@@ -247,7 +255,8 @@ class SyncManager {
       final deletedIds = await _localDb.getDeletedEntityIds(table);
       for (final id in deletedIds) {
         final existing = await _syncQueue.getItemsByEntity(type);
-        if (existing.any((e) => e.entityId == id && e.operation == 'delete')) continue;
+        if (existing.any((e) => e.entityId == id && e.operation == 'delete'))
+          continue;
 
         await _syncQueue.enqueue(
           entityType: type,
@@ -359,8 +368,9 @@ class SyncManager {
     for (final (type, table) in types) {
       final localCount = await _localDb.countEntities(table);
       final dirtyCount = await _localDb.countEntities(table, onlyDirty: true);
-      final deletedCount = await _localDb.countEntities(table, includeDeleted: true)
-          - localCount; // rough: total - non-deleted = deleted
+      final deletedCount =
+          await _localDb.countEntities(table, includeDeleted: true) -
+              localCount; // rough: total - non-deleted = deleted
       final queueItems = await _syncQueue.getItemsByEntity(type);
 
       stats.add(EntitySyncStats(
