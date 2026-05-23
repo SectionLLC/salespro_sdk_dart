@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:salespro_sdk/salespro_sdk_dart.dart';
+import 'package:salespro_sdk/salespro_sdk.dart';
 import 'package:salespro_sdk/src/exceptions/sdk_exceptions.dart';
 
 void main() {
