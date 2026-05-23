@@ -254,26 +254,26 @@ class MyApp extends StatelessWidget {
               ▼<br/>
 ┌─────────────────────────────────────────────────────────────┐<br/>
 │              SyncManager (Auto-Sync)                        │<br/>
-│                                                             │<br/>
+│-------------------------------------------------------------│<br/>
 │  Triggered by:                                              │<br/>
 │  • Connectivity restored (offline → online)                 │<br/>
 │  • Periodic timer (every 5 min, configurable)               │<br/>
 │  • Manual sdk.syncNow() call                                │<br/>
-│                                                             │<br/>
+│-------------------------------------------------------------│<br/>
 │  Phase 1: Process SyncQueue                                 │<br/>
 │    → POST/PUT/PATCH/DELETE each pending item                │<br/>
 │    → On success: mark completed, mark entity clean          │<br/>
 │    → On failure: increment attempts, retry later            │<br/>
-│                                                             │<br/>
+│-------------------------------------------------------------│<br/>
 │  Phase 2: Push Dirty Entities                               │<br/>
 │    → Find entities with is_dirty = 1 not in queue           │<br/>
 │    → Enqueue them for update                                │<br/>
-│                                                             │<br/>
+│-------------------------------------------------------------│<br/>
 │  Phase 3: Pull Remote Updates                               │<br/>
 │    → GET /contacts?updated_since=...                        │<br/>
 │    → GET /products?updated_since=...                        │<br/>
 │    → Upsert into local SQLite (not dirty)                   │<br/>
-│                                                             │<br/>
+│-------------------------------------------------------------│<br/>
 │  Phase 4: Cleanup                                           │<br/>
 │    → Remove completed/permanently-failed queue items        │<br/>
 └─────────────────────────────────────────────────────────────┘<br/>
