@@ -55,7 +55,7 @@ class OrderService {
       try {
         final response = await _httpClient.get(_basePath, queryParams: params);
         if (_isOfflineAvailable && response.data != null) {
-          _cacheList(response.data);
+          await _cacheList(response.data);
         }
         return response;
       } on NetworkException {} on SalesProException {
@@ -268,6 +268,23 @@ class OrderService {
   }
 
   // ── Helpers ──────────────────────────────────────────────
+
+  Future<ApiResponse> _localList(Map<String, dynamic> params) async {
+    final orders = await _localDb!.getAllEntities(_table);
+    return ApiResponse(data: orders, statusCode: 200);
+  }
+
+  Future<void> _cacheList(dynamic data) async {
+    if (data is! List) return;
+    for (final item in data) {
+      if (item is Map<String, dynamic>) {
+        final id = item['id'] as String?;
+        if (id != null) {
+          await _localDb!.upsertEntity(_table, id, item);
+        }
+      }
+    }
+  }
 
   void _enqueueUpdate(String id, Map<String, dynamic> json) {
     _syncQueue?.enqueue(
