@@ -8,6 +8,14 @@ library salespro_sdk;
 export 'src/config/sdk_config.dart';
 export 'src/client/http_client.dart';
 export 'src/auth/auth_manager.dart';
+export 'src/exceptions/sdk_exceptions.dart';
+
+// Storage
+export 'src/storage/local_database.dart';
+export 'src/storage/sync_queue.dart';
+export 'src/storage/connectivity_monitor.dart';
+export 'src/storage/sync_manager.dart';
+export 'src/storage/sync_event.dart';
 
 // Models
 export 'src/models/contact.dart';
@@ -18,6 +26,8 @@ export 'src/models/quote.dart';
 export 'src/models/inventory_item.dart';
 export 'src/models/report.dart';
 export 'src/models/api_response.dart';
+export 'src/models/sync_queue_item.dart';
+export 'src/models/sync_status.dart';
 
 // Services
 export 'src/services/contact_service.dart';
@@ -31,6 +41,11 @@ export 'src/services/report_service.dart';
 import 'src/config/sdk_config.dart';
 import 'src/client/http_client.dart';
 import 'src/auth/auth_manager.dart';
+import 'src/storage/local_database.dart';
+import 'src/storage/sync_queue.dart';
+import 'src/storage/connectivity_monitor.dart';
+import 'src/storage/sync_manager.dart';
+import 'src/storage/sync_event.dart';
 import 'src/services/contact_service.dart';
 import 'src/services/product_service.dart';
 import 'src/services/order_service.dart';
@@ -38,29 +53,23 @@ import 'src/services/invoice_service.dart';
 import 'src/services/quote_service.dart';
 import 'src/services/inventory_service.dart';
 import 'src/services/report_service.dart';
+import 'src/models/sync_status.dart';
 
-/// The main SDK class — your single entry point for all ERP interactions.
-///
-/// ```dart
-/// final sdk = SalesProSDK(
-///   config: SalesProConfig(
-///     baseUrl: 'https://erp.example.com/api',
-///     apiKey: 'your-api-key',
-///   ),
-/// );
-///
-/// // Authenticate
-/// await sdk.auth.login(username: 'admin', password: 'secret');
-///
-/// // Fetch contacts
-/// final contacts = await sdk.contacts.list();
-/// ```
+/// The main SDK class — single entry point for all ERP interactions
+/// with offline-first storage and auto-sync.
 class SalesProSDK {
   late final SalesProConfig _config;
   late final SalesProHttpClient _httpClient;
   late final AuthManager _authManager;
 
-  // Services (lazy-initialized via getters)
+  // Storage
+  LocalDatabase? _localDb;
+  SyncQueue? _syncQueue;
+  ConnectivityMonitor? _connectivityMonitor;
+  SyncManager? _syncManager;
+  SyncEventBus? _eventBus;
+
+  // Services
   ContactService? _contactService;
   ProductService? _productService;
   OrderService? _orderService;
@@ -69,65 +78,169 @@ class SalesProSDK {
   InventoryService? _inventoryService;
   ReportService? _reportService;
 
-  /// Create a new SDK instance with the given [config].
+  bool _initialized = false;
+
   SalesProSDK({required SalesProConfig config}) : _config = config {
     _httpClient = SalesProHttpClient(config: _config);
     _authManager = AuthManager(httpClient: _httpClient, config: _config);
   }
 
-  /// Create an SDK instance with just a base URL and API key.
   factory SalesProSDK.withApiKey({
     required String baseUrl,
     required String apiKey,
+    bool offlineEnabled = true,
   }) {
     return SalesProSDK(
-      config: SalesProConfig(baseUrl: baseUrl, apiKey: apiKey),
+      config: SalesProConfig(
+        baseUrl: baseUrl,
+        apiKey: apiKey,
+        offlineEnabled: offlineEnabled,
+      ),
     );
   }
 
-  // ── Getters ────────────────────────────────────────────────
+  // ── Initialization ──────────────────────────────────────
 
-  /// Authentication manager for login / logout / token refresh.
+  /// Initialize the SDK: set up local storage, connectivity monitor,
+  /// and start auto-sync.
+  ///
+  /// Must be called before using any service if `offlineEnabled` is true.
+  Future<void> init() async {
+    if (_initialized) return;
+
+    if (_config.offlineEnabled) {
+      _localDb = LocalDatabase();
+      _syncQueue = SyncQueue(_localDb!);
+      _connectivityMonitor = ConnectivityMonitor(_eventBus ??= SyncEventBus());
+      _eventBus ??= SyncEventBus();
+
+      _syncManager = SyncManager(
+        localDb: _localDb!,
+        syncQueue: _syncQueue!,
+        connectivityMonitor: _connectivityMonitor!,
+        eventBus: _eventBus!,
+        httpClient: _httpClient,
+        config: _config,
+      );
+
+      await _syncManager!.init();
+    }
+
+    _initialized = true;
+  }
+
+  // ── Getters ─────────────────────────────────────────────
+
   AuthManager get auth => _authManager;
 
-  /// Contact / Customer CRUD operations.
-  ContactService get contacts =>
-      _contactService ??= ContactService(httpClient: _httpClient);
+  ContactService get contacts => _contactService ??= ContactService(
+    httpClient: _httpClient,
+    localDb: _localDb,
+    syncQueue: _syncQueue,
+    connectivityMonitor: _connectivityMonitor,
+  );
 
-  /// Product / Item CRUD operations.
-  ProductService get products =>
-      _productService ??= ProductService(httpClient: _httpClient);
+  ProductService get products => _productService ??= ProductService(
+    httpClient: _httpClient,
+    localDb: _localDb,
+    syncQueue: _syncQueue,
+    connectivityMonitor: _connectivityMonitor,
+  );
 
-  /// Sales Order CRUD operations.
-  OrderService get orders =>
-      _orderService ??= OrderService(httpClient: _httpClient);
+  OrderService get orders => _orderService ??= OrderService(
+    httpClient: _httpClient,
+    localDb: _localDb,
+    syncQueue: _syncQueue,
+    connectivityMonitor: _connectivityMonitor,
+  );
 
-  /// Invoice CRUD operations.
-  InvoiceService get invoices =>
-      _invoiceService ??= InvoiceService(httpClient: _httpClient);
+  InvoiceService get invoices => _invoiceService ??= InvoiceService(
+    httpClient: _httpClient,
+    localDb: _localDb,
+    syncQueue: _syncQueue,
+    connectivityMonitor: _connectivityMonitor,
+  );
 
-  /// Quote CRUD operations.
-  QuoteService get quotes =>
-      _quoteService ??= QuoteService(httpClient: _httpClient);
+  QuoteService get quotes => _quoteService ??= QuoteService(
+    httpClient: _httpClient,
+    localDb: _localDb,
+    syncQueue: _syncQueue,
+    connectivityMonitor: _connectivityMonitor,
+  );
 
-  /// Inventory operations.
-  InventoryService get inventory =>
-      _inventoryService ??= InventoryService(httpClient: _httpClient);
+  InventoryService get inventory => _inventoryService ??= InventoryService(
+    httpClient: _httpClient,
+    localDb: _localDb,
+    syncQueue: _syncQueue,
+    connectivityMonitor: _connectivityMonitor,
+  );
 
-  /// Report operations.
-  ReportService get reports =>
-      _reportService ??= ReportService(httpClient: _httpClient);
+  ReportService get reports => _reportService ??= ReportService(
+    httpClient: _httpClient,
+    localDb: _localDb,
+    connectivityMonitor: _connectivityMonitor,
+  );
 
-  // ── Convenience ────────────────────────────────────────────
+  /// The sync manager (null if offline is disabled).
+  SyncManager? get sync => _syncManager;
 
-  /// Whether the SDK currently holds a valid authentication token.
+  /// The sync event bus for observing status and connectivity changes.
+  SyncEventBus? get events => _eventBus;
+
+  /// Whether the device is currently online.
+  bool get isOnline => _connectivityMonitor?.isOnline ?? true;
+
+  /// Whether the SDK has been initialized.
+  bool get isInitialized => _initialized;
+
+  /// Whether offline storage is available.
+  bool get isOfflineAvailable => _localDb != null;
+
+  /// Whether the SDK currently holds a valid auth token.
   bool get isAuthenticated => _authManager.isAuthenticated;
 
-  /// The current access token (may be null if not authenticated).
   String? get accessToken => _authManager.accessToken;
 
-  /// Override the HTTP client (useful for testing).
-  void setHttpClient(SalesProHttpClient client) {
-    // ignore: unnecessary_non_null_assertion — intentional override
+  // ── Sync Convenience Methods ────────────────────────────
+
+  /// Manually trigger a full sync cycle.
+  Future<SyncStatus> syncNow() async {
+    if (_syncManager == null) {
+      throw StateError('Offline storage is not enabled. Set offlineEnabled: true in config.');
+    }
+    return _syncManager!.syncAll();
+  }
+
+  /// Get sync statistics for all entity types.
+  Future<List<EntitySyncStats>> getSyncStats() async {
+    if (_syncManager == null) return [];
+    return _syncManager!.getStats();
+  }
+
+  /// Get the number of pending operations in the sync queue.
+  Future<int> getPendingCount() async {
+    if (_syncQueue == null) return 0;
+    return _syncQueue!.pendingCount();
+  }
+
+  /// Enable or disable auto-sync.
+  void setAutoSync(bool enabled) {
+    _syncManager?.setAutoSync(enabled);
+  }
+
+  // ── Cleanup ─────────────────────────────────────────────
+
+  /// Clear all local data (useful for logout).
+  Future<void> clearLocalData() async {
+    await _localDb?.clearAll();
+  }
+
+  /// Dispose of all resources.
+  Future<void> dispose() async {
+    _syncManager?.dispose();
+    _httpClient.dispose();
+    await _localDb?.close();
+    _eventBus?.removeAllListeners();
+    _initialized = false;
   }
 }

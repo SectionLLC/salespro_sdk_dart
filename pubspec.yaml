@@ -1,6 +1,6 @@
 name: salespro_sdk
-description: Flutter SDK for connecting and communicating with SalesPro ERP systems.
-version: 1.0.0
+description: Flutter SDK for connecting and communicating with SalesPro ERP systems with offline support.
+version: 2.0.0
 homepage: https://github.com/SectionLLC/SalesProSDK-Flutter
 
 environment:
@@ -12,6 +12,10 @@ dependencies:
     sdk: flutter
   http: ^1.1.0
   meta: ^1.9.1
+  sqflite: ^2.3.0
+  path: ^1.8.3
+  connectivity_plus: ^5.0.2
+  uuid: ^4.2.1
 
 dev_dependencies:
   flutter_test:
@@ -19,3 +23,4 @@ dev_dependencies:
   mockito: ^5.4.2
   build_runner: ^2.4.6
   flutter_lints: ^3.0.0
+  sqflite_common_ffi: ^2.3.0
