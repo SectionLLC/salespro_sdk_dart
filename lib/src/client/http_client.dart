@@ -32,7 +32,6 @@ class SalesProHttpClient {
   /// Merge default headers + auth headers.
   Map<String, String> _buildHeaders({Map<String, String>? extra}) {
     final headers = <String, String>{
-      'Content-Type': 'application/json',
       'Accept': 'application/json',
       ...config.defaultHeaders,
     };
@@ -54,7 +53,7 @@ class SalesProHttpClient {
     return headers;
   }
 
-  // ── Generic request methods ──────────────────────────────
+  // ── Generic request method ──────────────────────────────
 
   Future<ApiResponse> _request(
     HttpMethod method,
@@ -64,49 +63,45 @@ class SalesProHttpClient {
     Map<String, String>? extraHeaders,
   }) async {
     final uri = _buildUri(path, queryParams);
+    
+    // Determine Content-Type dynamically (JSON by default, unless overridden by extraHeaders)
+    final isFormRequest = extraHeaders?['Content-Type'] == 'application/x-www-form-urlencoded';
+    
     final headers = _buildHeaders(extra: extraHeaders);
+    if (!isFormRequest) {
+      headers['Content-Type'] = 'application/json';
+    }
 
     _log('--> $method ${uri.toString()}');
-    if (body != null) _log('    Body: ${jsonEncode(body)}');
+    if (body != null) _log('    Body: $body');
 
     http.Response response;
 
     try {
-      final encodedBody = body != null ? jsonEncode(body) : null;
+      final encodedBody = body != null 
+          ? (isFormRequest ? body as String : jsonEncode(body)) 
+          : null;
 
       switch (method) {
         case HttpMethod.get:
-          response = await _inner
-              .get(uri, headers: headers)
-              .timeout(config.timeout);
+          response = await _inner.get(uri, headers: headers).timeout(config.timeout);
           break;
         case HttpMethod.post:
-          response = await _inner
-              .post(uri, headers: headers, body: encodedBody)
-              .timeout(config.timeout);
+          response = await _inner.post(uri, headers: headers, body: encodedBody).timeout(config.timeout);
           break;
         case HttpMethod.put:
-          response = await _inner
-              .put(uri, headers: headers, body: encodedBody)
-              .timeout(config.timeout);
+          response = await _inner.put(uri, headers: headers, body: encodedBody).timeout(config.timeout);
           break;
         case HttpMethod.patch:
-          response = await _inner
-              .patch(uri, headers: headers, body: encodedBody)
-              .timeout(config.timeout);
+          response = await _inner.patch(uri, headers: headers, body: encodedBody).timeout(config.timeout);
           break;
         case HttpMethod.delete:
-          response = await _inner
-              .delete(uri, headers: headers, body: encodedBody)
-              .timeout(config.timeout);
+          response = await _inner.delete(uri, headers: headers, body: encodedBody).timeout(config.timeout);
           break;
       }
     } catch (e) {
       _log('<-- NETWORK ERROR: $e');
-      throw NetworkException(
-        message: 'Failed to connect to the server',
-        originalError: e,
-      );
+      throw NetworkException(message: 'Failed to connect to the server', originalError: e);
     }
 
     _log('<-- ${response.statusCode} ${uri.path}');
@@ -148,11 +143,7 @@ class SalesProHttpClient {
         );
       case 401:
       case 403:
-        throw AuthenticationException(
-          message: message,
-          statusCode: statusCode,
-          responseBody: body,
-        );
+        throw AuthenticationException(message: message, statusCode: statusCode, responseBody: body);
       case 404:
         throw NotFoundException(message: message, responseBody: body);
       case 429:
@@ -164,25 +155,15 @@ class SalesProHttpClient {
         );
       default:
         if (statusCode >= 500) {
-          throw ServerException(
-            message: message,
-            statusCode: statusCode,
-            responseBody: body,
-          );
+          throw ServerException(message: message, statusCode: statusCode, responseBody: body);
         }
-        throw SalesProException(
-          message: message,
-          statusCode: statusCode,
-          responseBody: body,
-        );
+        throw SalesProException(message: message, statusCode: statusCode, responseBody: body);
     }
   }
 
   String? _extractErrorMessage(dynamic data) {
     if (data is Map) {
-      return data['message'] as String? ??
-          data['error'] as String? ??
-          data['detail'] as String?;
+      return data['message'] as String? ?? data['error'] as String? ?? data['error_description'] as String?;
     }
     if (data is String) return data;
     return null;
@@ -197,35 +178,35 @@ class SalesProHttpClient {
 
   // ── Convenience methods ──────────────────────────────────
 
-  Future<ApiResponse> get(
-    String path, {
-    Map<String, dynamic>? queryParams,
-  }) =>
+  Future<ApiResponse> get(String path, {Map<String, dynamic>? queryParams}) =>
       _request(HttpMethod.get, path, queryParams: queryParams);
 
-  Future<ApiResponse> post(
-    String path, {
-    dynamic body,
-  }) =>
+  Future<ApiResponse> post(String path, {dynamic body}) =>
       _request(HttpMethod.post, path, body: body);
 
-  Future<ApiResponse> put(
-    String path, {
-    dynamic body,
-  }) =>
+  Future<ApiResponse> put(String path, {dynamic body}) =>
       _request(HttpMethod.put, path, body: body);
 
-  Future<ApiResponse> patch(
-    String path, {
-    dynamic body,
-  }) =>
+  Future<ApiResponse> patch(String path, {dynamic body}) =>
       _request(HttpMethod.patch, path, body: body);
 
-  Future<ApiResponse> delete(
-    String path, {
-    dynamic body,
-  }) =>
+  Future<ApiResponse> delete(String path, {dynamic body}) =>
       _request(HttpMethod.delete, path, body: body);
+
+  /// Post URL-encoded form data (required for OAuth2 token endpoints).
+  Future<ApiResponse> postForm(String path, {required Map<String, String> body}) async {
+    // Encode map to x-www-form-urlencoded string
+    final encodedBody = body.entries
+        .map((e) => '${Uri.encodeQueryComponent(e.key)}=${Uri.encodeQueryComponent(e.value)}')
+        .join('&');
+
+    return _request(
+      HttpMethod.post,
+      path,
+      body: encodedBody,
+      extraHeaders: {'Content-Type': 'application/x-www-form-urlencoded'},
+    );
+  }
 
   /// Close the underlying HTTP client.
   void dispose() {

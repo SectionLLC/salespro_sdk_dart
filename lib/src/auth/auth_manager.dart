@@ -24,25 +24,39 @@ class AuthManager {
     return true;
   }
 
-  /// The current access token.
   String? get accessToken => _accessToken;
-
-  /// The current refresh token.
   String? get refreshToken => _refreshToken;
 
-  /// ── Login with username & password ────────────────────────
+  /// ── Login with OAuth2 Resource Owner Password Grant ──────
   ///
-  /// Returns the decoded token payload.
+  /// Requires `clientId` and `clientSecret` to be set in [SalesProConfig].
+  /// Sends `grant_type=password`, `username`, `password`, `scope`, etc.
   Future<Map<String, dynamic>> login({
     required String username,
     required String password,
   }) async {
-    final response = await _httpClient.post(
-      '/auth/login',
-      body: {
-        'username': username,
-        'password': password,
-      },
+    if (_config.clientId == null || _config.clientSecret == null) {
+      throw AuthenticationException(
+        message: 'OAuth2 requires clientId and clientSecret in SalesProConfig',
+      );
+    }
+
+    final body = <String, String>{
+      'grant_type': 'password',
+      'client_id': _config.clientId!,
+      'client_secret': _config.clientSecret!,
+      'username': username,
+      'password': password,
+    };
+
+    // Include scope if provided in config
+    if (_config.scope != null && _config.scope!.isNotEmpty) {
+      body['scope'] = _config.scope!;
+    }
+
+    final response = await _httpClient.postForm(
+      '/oauth/token', // Standard OAuth2 token endpoint
+      body: body,
     );
 
     final data = response.data as Map<String, dynamic>;
@@ -50,9 +64,8 @@ class AuthManager {
     return data;
   }
 
-  /// ── Login with API key only (sets the config-level key) ───
+  /// ── Login with API key only ──────────────────────────────
   Future<void> loginWithApiKey(String apiKey) async {
-    // Verify the key by hitting a lightweight endpoint
     _config.apiKey = apiKey;
     try {
       await _httpClient.get('/auth/verify');
@@ -62,22 +75,33 @@ class AuthManager {
     }
   }
 
-  /// ── Refresh the access token ──────────────────────────────
+  /// ── Refresh the access token ─────────────────────────────
   Future<void> refresh() async {
     if (_refreshToken == null) {
       throw AuthenticationException(message: 'No refresh token available');
     }
 
-    final response = await _httpClient.post(
-      '/auth/refresh',
-      body: {'refresh_token': _refreshToken},
+    if (_config.clientId == null || _config.clientSecret == null) {
+      throw AuthenticationException(
+        message: 'OAuth2 requires clientId and clientSecret to refresh tokens',
+      );
+    }
+
+    final response = await _httpClient.postForm(
+      '/oauth/token',
+      body: {
+        'grant_type': 'refresh_token',
+        'refresh_token': _refreshToken!,
+        'client_id': _config.clientId!,
+        'client_secret': _config.clientSecret!,
+      },
     );
 
     final data = response.data as Map<String, dynamic>;
     _applyTokens(data);
   }
 
-  /// ── Logout (invalidate server-side) ───────────────────────
+  /// ── Logout (invalidate server-side) ──────────────────────
   Future<void> logout() async {
     try {
       await _httpClient.post('/auth/logout');
@@ -88,7 +112,7 @@ class AuthManager {
     }
   }
 
-  /// ── Get current authenticated user profile ────────────────
+  /// ── Get current authenticated user profile ───────────────
   Future<Map<String, dynamic>> me() async {
     final response = await _httpClient.get('/auth/me');
     return response.data as Map<String, dynamic>;

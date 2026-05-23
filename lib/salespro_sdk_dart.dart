@@ -84,7 +84,24 @@ class SalesProSDK {
     _httpClient = SalesProHttpClient(config: _config);
     _authManager = AuthManager(httpClient: _httpClient, config: _config);
   }
-
+  /// Create an SDK instance with OAuth2 credentials.
+  factory SalesProSDK.withOAuth2({
+    required String baseUrl,
+    required String clientId,
+    required String clientSecret,
+    String? scope,
+    bool offlineEnabled = true,
+  }) {
+    return SalesProSDK(
+      config: SalesProConfig(
+        baseUrl: baseUrl,
+        clientId: clientId,
+        clientSecret: clientSecret,
+        scope: scope,
+        offlineEnabled: offlineEnabled,
+      ),
+    );
+  }
   factory SalesProSDK.withApiKey({
     required String baseUrl,
     required String apiKey,

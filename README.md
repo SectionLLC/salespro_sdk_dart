@@ -18,6 +18,37 @@ void main() async {
   runApp(MyApp(sdk: sdk));
 }
 ```
+## Initialization with OAuth2
+
+```dart
+final sdk = SalesProSDK.withOAuth2(
+  baseUrl: 'https://erp.example.com/api',
+  clientId: 'your-client-id',
+  clientSecret: 'your-client-secret',
+  scope: 'read write', // Optional: your ERP's required scopes
+);
+
+// Initialize offline storage and auto-sync
+await sdk.init();
+```
+
+## Logging in with Username & Password
+
+```dart
+try {
+  final tokenData = await sdk.auth.login(
+    username: 'admin@example.com',
+    password: 'super-secret-password',
+  );
+  
+  print('Login successful! Token: ${sdk.accessToken}');
+  print('Expires in: ${tokenData['expires_in']} seconds');
+  
+} on AuthenticationException catch (e) {
+  print('Failed to login: ${e.message}');
+  // Handle invalid_grant, invalid_client, etc.
+}
+```
 
 ## Listen to Sync & Connectivity Events
 

@@ -1,7 +1,13 @@
 /// Configuration for the SalesPro SDK.
 class SalesProConfig {
   final String baseUrl;
-  final String? apiKey;
+
+    // OAuth2 Credentials
+  final String? clientId;
+  final String? clientSecret;
+  final String? scope;
+
+  String? apiKey;
   String? bearerToken;
   final Duration timeout;
 
@@ -28,6 +34,9 @@ class SalesProConfig {
 
   SalesProConfig({
     required this.baseUrl,
+    this.clientId,
+    this.clientSecret,
+    this.scope,
     this.apiKey,
     this.bearerToken,
     this.timeout = const Duration(seconds: 30),
@@ -50,6 +59,9 @@ class SalesProConfig {
 
   SalesProConfig copyWith({
     String? baseUrl,
+    String? clientId,
+    String? clientSecret,
+    String? scope,
     String? apiKey,
     String? bearerToken,
     Duration? timeout,
@@ -63,6 +75,9 @@ class SalesProConfig {
   }) {
     return SalesProConfig(
       baseUrl: baseUrl ?? this.baseUrl,
+      clientId: clientId ?? this.clientId,
+      clientSecret: clientSecret ?? this.clientSecret,
+      scope: scope ?? this.scope,
       apiKey: apiKey ?? this.apiKey,
       bearerToken: bearerToken ?? this.bearerToken,
       timeout: timeout ?? this.timeout,
