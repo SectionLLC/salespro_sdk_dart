@@ -226,56 +226,56 @@ class MyApp extends StatelessWidget {
 ## How Auto-Sync Works — Flow Diagram
 
 ┌─────────────────────────────────────────────────────────────┐
-│                     USER ACTION                              │
+│                     USER ACTION                             │
 │  (create, update, delete contact/product/order/etc.)        │
 └─────────────┬───────────────────────────────────────────────┘
               │
               ▼
 ┌─────────────────────────────────────────────────────────────┐
-│              SERVICE (Offline-First)                         │
-│                                                              │
+│              SERVICE (Offline-First)                        │
+│                                                             │
 │  1. Save to SQLite (is_dirty = 1)      ← Always             │
-│  2. Try API call                        ← If online          │
-│     ├─ Success → Mark clean locally                           │
-│     └─ NetworkException → Enqueue in SyncQueue               │
-│  3. If offline → Enqueue in SyncQueue                        │
-│  4. Return the local entity                                  │
+│  2. Try API call                        ← If online         │
+│     ├─ Success → Mark clean locally                         │
+│     └─ NetworkException → Enqueue in SyncQueue              │
+│  3. If offline → Enqueue in SyncQueue                       │
+│  4. Return the local entity                                 │
 └─────────────┬───────────────────────────────────────────────┘
               │
               ▼
 ┌─────────────────────────────────────────────────────────────┐
-│           ConnectivityMonitor                                 │
-│                                                              │
-│  • Listens to connectivity_plus                              │
-│  • Detects: offline → online transition                      │
-│  • Emits event to SyncEventBus                               │
+│           ConnectivityMonitor                               │
+│                                                             │
+│  • Listens to connectivity_plus                             │
+│  • Detects: offline → online transition                     │
+│  • Emits event to SyncEventBus                              │
 └─────────────┬───────────────────────────────────────────────┘
               │
               ▼
 ┌─────────────────────────────────────────────────────────────┐
-│              SyncManager (Auto-Sync)                          │
-│                                                              │
-│  Triggered by:                                               │
-│  • Connectivity restored (offline → online)                  │
-│  • Periodic timer (every 5 min, configurable)                │
-│  • Manual sdk.syncNow() call                                 │
-│                                                              │
-│  Phase 1: Process SyncQueue                                  │
-│    → POST/PUT/PATCH/DELETE each pending item                 │
-│    → On success: mark completed, mark entity clean           │
-│    → On failure: increment attempts, retry later             │
-│                                                              │
-│  Phase 2: Push Dirty Entities                                │
-│    → Find entities with is_dirty = 1 not in queue            │
-│    → Enqueue them for update                                 │
-│                                                              │
-│  Phase 3: Pull Remote Updates                                │
-│    → GET /contacts?updated_since=...                         │
-│    → GET /products?updated_since=...                         │
-│    → Upsert into local SQLite (not dirty)                    │
-│                                                              │
-│  Phase 4: Cleanup                                            │
-│    → Remove completed/permanently-failed queue items         │
+│              SyncManager (Auto-Sync)                        │
+│                                                             │
+│  Triggered by:                                              │
+│  • Connectivity restored (offline → online)                 │
+│  • Periodic timer (every 5 min, configurable)               │
+│  • Manual sdk.syncNow() call                                │
+│                                                             │
+│  Phase 1: Process SyncQueue                                 │
+│    → POST/PUT/PATCH/DELETE each pending item                │
+│    → On success: mark completed, mark entity clean          │
+│    → On failure: increment attempts, retry later            │
+│                                                             │
+│  Phase 2: Push Dirty Entities                               │
+│    → Find entities with is_dirty = 1 not in queue           │
+│    → Enqueue them for update                                │
+│                                                             │
+│  Phase 3: Pull Remote Updates                               │
+│    → GET /contacts?updated_since=...                        │
+│    → GET /products?updated_since=...                        │
+│    → Upsert into local SQLite (not dirty)                   │
+│                                                             │
+│  Phase 4: Cleanup                                           │
+│    → Remove completed/permanently-failed queue items        │
 └─────────────────────────────────────────────────────────────┘
 
 ## Summary of Offline Features
