@@ -10,3 +10,4 @@
 ## 3.0.0
 
 - FIX: Resolved android-36
+- FEATURE: Added trials for each enqueue item 3 trials if fails ignore
