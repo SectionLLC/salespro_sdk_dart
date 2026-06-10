@@ -2,7 +2,8 @@ import '../models/sync_status.dart';
 
 /// Callback signatures for sync lifecycle events.
 typedef SyncStatusCallback = void Function(SyncStatus status);
-typedef SyncErrorCallback = void Function(String entityType, String entityId, Object error);
+typedef SyncErrorCallback = void Function(
+    String entityType, String entityId, Object error);
 typedef ConnectivityChangedCallback = void Function(bool isOnline);
 
 /// Event system for observing sync and connectivity changes.
@@ -10,7 +11,8 @@ class SyncEventBus {
   final List<SyncStatusCallback> _statusListeners = [];
   final List<SyncErrorCallback> _errorListeners = [];
   final List<ConnectivityChangedCallback> _connectivityListeners = [];
-  final List<VoidCallback> _syncCompletedListeners = [];
+  final List<void Function()> _syncCompletedListeners =
+      []; // FIX: Replaced VoidCallback with void Function()
 
   /// Register a callback for sync status changes.
   void onStatusChanged(SyncStatusCallback callback) {
@@ -28,7 +30,8 @@ class SyncEventBus {
   }
 
   /// Register a callback for sync completion.
-  void onSyncCompleted(VoidCallback callback) {
+  void onSyncCompleted(void Function() callback) {
+    // FIX: Replaced VoidCallback with void Function()
     _syncCompletedListeners.add(callback);
   }
 

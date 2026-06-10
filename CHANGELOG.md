@@ -6,3 +6,7 @@
 - BREAKING CHANGE: [Describe changes here]
 - FEATURE: Added [new functionality]
 - FIX: Resolved issue with [component]
+
+## 3.0.0
+
+- FIX: Resolved android-36

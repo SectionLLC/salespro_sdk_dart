@@ -1,17 +1,17 @@
 /// Represents a pending operation in the sync queue.
 class SyncQueueItem {
   final String? id;
-  final String entityType;   // 'contact', 'product', 'order', etc.
-  final String entityId;     // The entity's ID
-  final String operation;    // 'create', 'update', 'delete'
-  final String path;         // API endpoint path
-  final String? body;        // JSON-encoded request body
-  final String? headers;     // JSON-encoded extra headers
+  final String entityType; // 'contact', 'product', 'order', etc.
+  final String entityId; // The entity's ID
+  final String operation; // 'create', 'update', 'delete'
+  final String path; // API endpoint path
+  final String? body; // JSON-encoded request body
+  final String? headers; // JSON-encoded extra headers
   final int attempts;
   final int maxAttempts;
   final DateTime createdAt;
   final DateTime? lastAttemptAt;
-  final String status;       // 'pending', 'in_progress', 'failed', 'completed'
+  final String status; // 'pending', 'in_progress', 'failed', 'completed'
 
   SyncQueueItem({
     this.id,
@@ -22,7 +22,7 @@ class SyncQueueItem {
     this.body,
     this.headers,
     this.attempts = 0,
-    this.maxAttempts = 5,
+    this.maxAttempts = 3, // CHANGED: Default to 3 trials
     DateTime? createdAt,
     this.lastAttemptAt,
     this.status = 'pending',
@@ -38,7 +38,8 @@ class SyncQueueItem {
       body: map['body'] as String?,
       headers: map['headers'] as String?,
       attempts: map['attempts'] as int? ?? 0,
-      maxAttempts: map['max_attempts'] as int? ?? 5,
+      maxAttempts:
+          map['max_attempts'] as int? ?? 3, // CHANGED: Default to 3 trials
       createdAt: map['created_at'] != null
           ? DateTime.fromMillisecondsSinceEpoch(map['created_at'] as int)
           : DateTime.now(),

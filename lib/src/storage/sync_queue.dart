@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
 import 'local_database.dart';
 import '../models/sync_queue_item.dart';
@@ -18,7 +19,7 @@ class SyncQueue {
     required String path,
     Map<String, dynamic>? body,
     Map<String, String>? headers,
-    int maxAttempts = 5,
+    int maxAttempts = 3, // CHANGED: Default to 3 trials
   }) async {
     final item = SyncQueueItem(
       id: _uuid.v4(),
@@ -87,15 +88,9 @@ class SyncQueue {
   /// Mark an item as in progress.
   Future<void> markInProgress(String id) async {
     final db = await _db.database;
-    await db.update(
-      LocalDatabase.syncQueueTable,
-      {
-        'status': 'in_progress',
-        'last_attempt_at': DateTime.now().millisecondsSinceEpoch,
-        'attempts': Sqflite.sql('attempts + 1'),
-      },
-      where: 'id = ?',
-      whereArgs: [id],
+    await db.rawUpdate(
+      'UPDATE ${LocalDatabase.syncQueueTable} SET status = ?, last_attempt_at = ?, attempts = attempts + 1 WHERE id = ?',
+      ['in_progress', DateTime.now().millisecondsSinceEpoch, id],
     );
   }
 
@@ -110,18 +105,22 @@ class SyncQueue {
   }
 
   /// Mark an item as failed (will be retried if attempts remain).
-  Future<void> markFailed(String id) async {
+  /// Returns the updated item so the manager can check if it's exhausted.
+  Future<SyncQueueItem?> markFailed(String id) async {
     final db = await _db.database;
-    // Check if attempts exhausted
+
     final rows = await db.query(
       LocalDatabase.syncQueueTable,
       where: 'id = ?',
       whereArgs: [id],
       limit: 1,
     );
-    if (rows.isEmpty) return;
+    if (rows.isEmpty) return null;
 
     final item = SyncQueueItem.fromMap(rows.first);
+
+    // If attempts are exhausted, mark as permanently 'failed'
+    // Otherwise, set back to 'pending' for the next retry
     final newStatus = item.attempts >= item.maxAttempts ? 'failed' : 'pending';
 
     await db.update(
@@ -133,6 +132,8 @@ class SyncQueue {
       where: 'id = ?',
       whereArgs: [id],
     );
+
+    return item.copyWith(status: newStatus);
   }
 
   /// Remove a specific item.

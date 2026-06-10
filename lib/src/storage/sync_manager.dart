@@ -12,10 +12,6 @@ import '../models/sync_status.dart';
 import '../exceptions/sdk_exceptions.dart';
 
 /// Coordinates the synchronization of local changes with the remote ERP.
-///
-/// - Watches connectivity via [ConnectivityMonitor]
-/// - Processes the [SyncQueue] when online
-/// - Emits events via [SyncEventBus]
 class SyncManager {
   final LocalDatabase _localDb;
   final SyncQueue _syncQueue;
@@ -27,7 +23,7 @@ class SyncManager {
   SyncStatus _status = SyncStatus();
   bool _autoSyncEnabled = true;
   Timer? _periodicTimer;
-  StreamSubscription<bool>? _connectivitySub;
+  ConnectivityChangedCallback? _connectivityCallback;
 
   SyncManager({
     required LocalDatabase localDb,
@@ -43,34 +39,26 @@ class SyncManager {
         _httpClient = httpClient,
         _config = config;
 
-  /// Current sync status.
   SyncStatus get status => _status;
-
-  /// Whether auto-sync is enabled.
   bool get autoSyncEnabled => _autoSyncEnabled;
-
-  /// Whether the device is currently online.
   bool get isOnline => _connectivityMonitor.isOnline;
-
-  /// The event bus for observing sync and connectivity events.
   SyncEventBus get events => _eventBus;
 
   // ── Lifecycle ────────────────────────────────────────────
 
-  /// Initialize the sync manager: start connectivity monitoring and
-  /// register the auto-sync trigger.
   Future<void> init() async {
     await _connectivityMonitor.start();
 
-    _connectivitySub = _eventBus.onConnectivityChanged((isOnline) {
+    _connectivityCallback = (isOnline) {
       if (isOnline && _autoSyncEnabled) {
         syncAll();
       } else if (!isOnline) {
         _updateStatus(_status.copyWith(state: SyncState.offline));
       }
-    });
+    };
 
-    // Periodic sync attempt (configurable interval)
+    _eventBus.onConnectivityChanged(_connectivityCallback!);
+
     _periodicTimer = Timer.periodic(
       _config.syncInterval ?? const Duration(minutes: 5),
       (_) {
@@ -80,29 +68,30 @@ class SyncManager {
       },
     );
 
-    // If already online, do an initial sync
     if (_connectivityMonitor.isOnline && _autoSyncEnabled) {
       await syncAll();
     }
   }
 
-  /// Stop all monitoring and timers.
   void dispose() {
     _periodicTimer?.cancel();
-    _connectivitySub?.cancel();
+    if (_connectivityCallback != null) {
+      _eventBus.removeListener(_connectivityCallback);
+    }
     _connectivityMonitor.stop();
   }
 
-  /// Enable or disable auto-sync.
   void setAutoSync(bool enabled) {
     _autoSyncEnabled = enabled;
   }
 
   // ── Sync Operations ─────────────────────────────────────
 
-  /// Run a full sync cycle: push local changes → pull remote updates.
   Future<SyncStatus> syncAll() async {
-    if (_status.isSyncing) return _status;
+    if (_status.isSyncing) {
+      return _status;
+    }
+
     if (!_connectivityMonitor.isOnline) {
       _updateStatus(_status.copyWith(state: SyncState.offline));
       return _status;
@@ -115,16 +104,11 @@ class SyncManager {
     ));
 
     try {
-      // Phase 1: Push pending queue items to the server
       await _processSyncQueue();
-
-      // Phase 2: Push dirty entities not yet in the queue
       await _pushDirtyEntities();
-
-      // Phase 3: Pull latest from server
       await _pullRemoteUpdates();
 
-      // Phase 4: Cleanup
+      // Cleanup removes completed items AND items that failed 3 times (ignored)
       await _syncQueue.cleanup();
 
       final completedStatus = SyncStatus(
@@ -147,11 +131,12 @@ class SyncManager {
     }
   }
 
-  /// Process all pending items in the sync queue.
   Future<void> _processSyncQueue() async {
     final items = await _syncQueue.getPendingItems();
 
-    if (items.isEmpty) return;
+    if (items.isEmpty) {
+      return;
+    }
 
     _updateStatus(_status.copyWith(
       totalItems: items.length,
@@ -172,8 +157,8 @@ class SyncManager {
     }
   }
 
-  /// Process a single sync queue item.
   Future<void> _processQueueItem(SyncQueueItem item) async {
+    // Mark as in progress (increments attempts by 1 via rawUpdate)
     await _syncQueue.markInProgress(item.id!);
 
     try {
@@ -206,7 +191,6 @@ class SyncManager {
         item.entityId,
       );
 
-      // If it was a delete, also hard-delete the local row
       if (item.operation == 'delete') {
         await _localDb.deleteEntity(
           _entityTypeToTable(item.entityType),
@@ -214,12 +198,27 @@ class SyncManager {
         );
       }
     } catch (e) {
+      // Mark as failed. This returns the updated item so we can check attempts.
+      final updatedItem = await _syncQueue.markFailed(item.id!);
+
       _eventBus.emitError(item.entityType, item.entityId, e);
-      await _syncQueue.markFailed(item.id!);
+
+      // NEW: If the item has exhausted its 3 retries, emit a specific event
+      // so the app knows it's being ignored. The cleanup() function will delete it.
+      if (updatedItem != null && updatedItem.isExhausted) {
+        _eventBus.emitError(
+          item.entityType,
+          item.entityId,
+          SalesProException(
+            message:
+                'Sync item ignored after ${updatedItem.maxAttempts} failed attempts.',
+            statusCode: 0,
+          ),
+        );
+      }
     }
   }
 
-  /// Push dirty entities that aren't yet in the queue.
   Future<void> _pushDirtyEntities() async {
     final entityTypes = [
       'contact',
@@ -236,11 +235,14 @@ class SyncManager {
 
       for (final entity in dirtyEntities) {
         final id = entity['id']?.toString();
-        if (id == null) continue;
+        if (id == null) {
+          continue;
+        }
 
-        // Check if already in queue to avoid duplicates
         final existing = await _syncQueue.getItemsByEntity(type);
-        if (existing.any((e) => e.entityId == id)) continue;
+        if (existing.any((e) => e.entityId == id)) {
+          continue;
+        }
 
         await _syncQueue.enqueue(
           entityType: type,
@@ -251,12 +253,12 @@ class SyncManager {
         );
       }
 
-      // Handle soft-deleted entities
       final deletedIds = await _localDb.getDeletedEntityIds(table);
       for (final id in deletedIds) {
         final existing = await _syncQueue.getItemsByEntity(type);
-        if (existing.any((e) => e.entityId == id && e.operation == 'delete'))
+        if (existing.any((e) => e.entityId == id && e.operation == 'delete')) {
           continue;
+        }
 
         await _syncQueue.enqueue(
           entityType: type,
@@ -268,7 +270,6 @@ class SyncManager {
     }
   }
 
-  /// Pull latest data from the server for each entity type.
   Future<void> _pullRemoteUpdates() async {
     // Pull contacts
     try {
@@ -283,9 +284,7 @@ class SyncManager {
           await _localDb.upsertEntity(LocalDatabase.contactsTable, id, map);
         }
       }
-    } catch (_) {
-      // Silently continue — pull is best-effort
-    }
+    } catch (_) {}
 
     // Pull products
     try {
@@ -347,13 +346,11 @@ class SyncManager {
       }
     } catch (_) {}
 
-    // Update last sync timestamp
     _config.lastSyncTimestamp = DateTime.now();
   }
 
   // ── Stats & Info ────────────────────────────────────────
 
-  /// Get sync statistics for all entity types.
   Future<List<EntitySyncStats>> getStats() async {
     final types = [
       ('contact', LocalDatabase.contactsTable),
@@ -368,9 +365,9 @@ class SyncManager {
     for (final (type, table) in types) {
       final localCount = await _localDb.countEntities(table);
       final dirtyCount = await _localDb.countEntities(table, onlyDirty: true);
-      final deletedCount =
-          await _localDb.countEntities(table, includeDeleted: true) -
-              localCount; // rough: total - non-deleted = deleted
+      final totalWithDeleted =
+          await _localDb.countEntities(table, includeDeleted: true);
+      final deletedCount = totalWithDeleted - localCount;
       final queueItems = await _syncQueue.getItemsByEntity(type);
 
       stats.add(EntitySyncStats(
